@@ -1,71 +1,62 @@
 import streamlit as st
-from transformers import pipeline
+from transformers import pipeline, AutoTokenizer, AutoModelForSeq2SeqLM
 
 st.set_page_config(page_title="Movie Review Analyzer", page_icon="🎬")
 
 st.title("🎬 Movie Review Sentiment & Insight")
 st.markdown("Enter a movie review below to analyze its sentiment and get a one-sentence summary.")
 
-# ----- 加载模型 -----
+# ----- 情感分析 pipeline (你的微调模型) -----
 @st.cache_resource
 def load_sentiment_pipeline():
-    """加载你微调的 IMDb 情感分析模型 (DistilBERT)"""
     return pipeline(
         "text-classification",
         model="Aku0423/imdb-distilbert",
-        tokenizer="Aku0423/imdb-distilbert",
-        return_all_scores=False,
+        tokenizer="Aku0423/imdb-distilbert"
     )
 
+# ----- 摘要模型 (直接加载，不使用 text-generation pipeline) -----
 @st.cache_resource
-def load_summarizer():
-    """加载 BART 摘要模型 (适配新版 transformers)"""
-    return pipeline("text-generation", model="facebook/bart-large-cnn")
+def load_summarizer_model():
+    model_name = "facebook/bart-large-cnn"
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
+    return tokenizer, model
 
 sentiment_pipe = load_sentiment_pipeline()
-summarizer_pipe = load_summarizer()
+sum_tokenizer, sum_model = load_summarizer_model()
 
-# ----- 用户输入 -----
-review = st.text_area(
-    "✍️ Paste a movie review (at least 20 words):",
-    height=200,
-    placeholder="e.g. 'This film is a masterpiece...'"
-)
+# ----- UI -----
+review = st.text_area("✍️ Paste a movie review (at least 20 words):", height=200)
 
 if st.button("🔍 Analyze", type="primary"):
-    # 简单长度检查
     if len(review.split()) < 10:
         st.warning("Please enter a longer review (at least 10 words).")
     else:
         with st.spinner("Analyzing sentiment and generating summary..."):
-
-            # 1. 情感分析（使用完整原文）
+            # 1. 情感分析
             sentiment = sentiment_pipe(review)[0]
-            # 你的模型已自带 id2label，直接返回 POSITIVE / NEGATIVE
-            label = f"{sentiment['label']} 😊" if sentiment['label'] == 'POSITIVE' else f"{sentiment['label']} 😞"
-            confidence = sentiment['score']
+            label = "POSITIVE 😊" if sentiment['label'] == 'POSITIVE' else "NEGATIVE 😞"
+            conf = sentiment['score']
 
-            # 2. 摘要（截断后再生成）
-            review_for_summary = review[:1024]  # BART 最大输入长度
-            prompt = f"summarize: {review_for_summary}"
-            raw_summary = summarizer_pipe(
-                prompt,
-                max_new_tokens=60,
-                min_new_tokens=20,
-                do_sample=False,
-            )[0]['generated_text']
+            # 2. 摘要
+            review_trim = review[:1024]
+            inputs = sum_tokenizer(review_trim, return_tensors="pt", truncation=True, max_length=1024)
+            summary_ids = sum_model.generate(
+                inputs.input_ids,
+                max_length=60,
+                min_length=20,
+                num_beams=4,
+                early_stopping=True,
+                no_repeat_ngram_size=3,
+            )
+            summary = sum_tokenizer.decode(summary_ids[0], skip_special_tokens=True)
 
-            # 如果生成结果包含了 prompt 本身，则移除
-            if raw_summary.startswith(prompt):
-                summary = raw_summary[len(prompt):].strip()
-            else:
-                summary = raw_summary.strip()
-
-        # ----- 显示结果 -----
+        # 显示
         col1, col2 = st.columns(2)
         with col1:
             st.subheader("Sentiment")
-            st.metric(label=label, value=f"{confidence:.2%}")
+            st.metric(label=label, value=f"{conf:.2%}")
         with col2:
             st.subheader("Key Insight")
             st.write(summary)
