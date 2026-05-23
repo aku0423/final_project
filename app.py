@@ -1,10 +1,9 @@
 import streamlit as st
 from transformers import pipeline
 
-# ----- Load two pipelines (cached) -----
+# ----- Load pipelines -----
 @st.cache_resource
 def load_sentiment_pipeline():
-    """Pipeline 1: Fine-tuned IMDb sentiment classifier."""
     return pipeline(
         "text-classification",
         model="Aku0423/imdb-distilbert",
@@ -15,7 +14,6 @@ def load_sentiment_pipeline():
 
 @st.cache_resource
 def load_summarization_pipeline():
-    """Pipeline 2: BART summarizer using text-generation pipeline."""
     return pipeline(
         "text-generation",
         model="facebook/bart-large-cnn",
@@ -24,20 +22,19 @@ def load_summarization_pipeline():
 sentiment_pipe = load_sentiment_pipeline()
 summarizer = load_summarization_pipeline()
 
-# ----- Helper: limit output to first two sentences -----
+# ----- Helper: first two sentences -----
 def first_two_sentences(text):
-    """Return the first two sentences from a text (split on . ! ?)."""
     sentences = []
-    current = ""
+    cur = ""
     for ch in text:
-        current += ch
-        if ch in ('.', '!', '?'):
-            stripped = current.strip()
+        cur += ch
+        if ch in '.!?':
+            stripped = cur.strip()
             if stripped:
                 sentences.append(stripped)
-            current = ""
-    if current.strip():
-        sentences.append(current.strip())
+            cur = ""
+    if cur.strip():
+        sentences.append(cur.strip())
     return ' '.join(sentences[:2])
 
 # ----- UI -----
@@ -56,14 +53,14 @@ if st.button("🔍 Analyze", type="primary"):
         st.warning("Please enter a longer review (at least 10 words).")
     else:
         with st.spinner("Analyzing sentiment and generating insight..."):
-            # --- Sentiment analysis ---
+            # --- Sentiment ---
             sentiment_result = sentiment_pipe(review)[0]
-            label = sentiment_result['label']          # POSITIVE or NEGATIVE
+            label = sentiment_result['label']
             confidence = sentiment_result['score']
             display_label = f"{label} 😊" if label == "POSITIVE" else f"{label} 😞"
 
             # --- Summarization ---
-            review_trim = review[:1024]   # BART max input (truncate if needed)
+            review_trim = review[:1024]
             prompt = f"summarize: {review_trim}"
 
             raw_output = summarizer(
@@ -75,19 +72,20 @@ if st.button("🔍 Analyze", type="primary"):
                 repetition_penalty=1.2,
                 no_repeat_ngram_size=3,
                 early_stopping=True,
+                pad_token_id=summarizer.tokenizer.eos_token_id,  # 🔧 关键修复
             )[0]['generated_text']
 
-            # Clean possible repetition of the prompt
+            # Clean prompt if repeated
             if raw_output.startswith(prompt):
                 raw_output = raw_output[len(prompt):].strip()
 
-            # Ensure it ends with a proper punctuation
+            # Ensure ending punctuation
             if raw_output and raw_output[-1] not in ('.', '!', '?'):
                 raw_output += '.'
 
             insight = first_two_sentences(raw_output)
 
-        # --- Display results ---
+        # --- Display ---
         col1, col2 = st.columns(2)
         with col1:
             st.subheader("Sentiment")
