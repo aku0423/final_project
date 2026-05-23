@@ -67,7 +67,6 @@ if st.button("🔍 Analyze", type="primary"):
             display_label = f"{label} 😊" if label == "POSITIVE" else f"{label} 😞"
 
             # 2. Summarization
-            review_trim = review[:1024]  # BART max input
             inputs = sum_tokenizer(
                 review_trim,
                 return_tensors="pt",
