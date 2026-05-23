@@ -14,7 +14,7 @@ def load_sentiment_pipeline():
 # Pipeline 2: Facebook BART summarizer (trusted source: Meta AI)
 @st.cache_resource
 def load_summarizer():
-    return pipeline("summarization", model="facebook/bart-large-cnn")
+    return pipeline("text-generation", model="facebook/bart-large-cnn")
 
 sentiment_pipe = load_sentiment_pipeline()
 summarizer = load_summarizer()
@@ -29,13 +29,19 @@ if st.button("🔍 Analyze", type="primary"):
             sentiment = sentiment_pipe(review)[0]
             label = "POSITIVE 😊" if sentiment['label'] == 'POSITIVE' else "NEGATIVE 😞"
             confidence = sentiment['score']
-            
-            # Summarization (truncate if too long)
+    
+            # 摘要（text-generation 代替原 summarization）
             if len(review) > 1024:
                 review = review[:1024]
-            summary = summarizer(review, max_length=60, min_length=20, do_sample=False)[0]['summary_text']
-            
+            summary = summarizer(
+                f"summarize: {review}",
+                max_length=60,
+                min_length=20,
+                do_sample=False
+            )[0]['generated_text']
+
         col1, col2 = st.columns(2)
+        
         with col1:
             st.subheader("Sentiment")
             st.metric(label=label, value=f"{confidence:.2%}")
