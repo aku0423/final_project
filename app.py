@@ -1,10 +1,10 @@
 import streamlit as st
-from transformers import pipeline, AutoTokenizer, AutoModelForSeq2SeqLM
+from transformers import pipeline
 
-# ----- Load models (cached) -----
+# ----- Load two pipelines (cached) -----
 @st.cache_resource
 def load_sentiment_pipeline():
-    """Load your fine-tuned IMDb sentiment classifier."""
+    """Pipeline 1: Fine-tuned IMDb sentiment classifier."""
     return pipeline(
         "text-classification",
         model="Aku0423/imdb-distilbert",
@@ -14,34 +14,30 @@ def load_sentiment_pipeline():
     )
 
 @st.cache_resource
-def load_summarizer_model():
-    """Load BART-large-CNN for extractive/abstractive summarization."""
-    model_name = "facebook/bart-large-cnn"
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
-    return tokenizer, model
+def load_summarization_pipeline():
+    """Pipeline 2: BART summarizer using text-generation pipeline."""
+    return pipeline(
+        "text-generation",
+        model="facebook/bart-large-cnn",
+    )
 
-# Initialize pipelines
 sentiment_pipe = load_sentiment_pipeline()
-sum_tokenizer, sum_model = load_summarizer_model()
+summarizer = load_summarization_pipeline()
 
-# ----- Simple sentence tokenizer (no nltk needed) -----
-def get_first_two_sentences(text):
-    """Return the first two sentences of a text, splitting on '.', '!' or '?'."""
-    # Split on sentence-ending punctuation and keep the delimiter
+# ----- Helper: limit output to first two sentences -----
+def first_two_sentences(text):
+    """Return the first two sentences from a text (split on . ! ?)."""
     sentences = []
     current = ""
-    for char in text:
-        current += char
-        if char in ('.', '!', '?'):
+    for ch in text:
+        current += ch
+        if ch in ('.', '!', '?'):
             stripped = current.strip()
             if stripped:
                 sentences.append(stripped)
             current = ""
-    # Add any remaining text as a sentence if there's no ending punctuation
     if current.strip():
         sentences.append(current.strip())
-    # Return first two sentences (joined)
     return ' '.join(sentences[:2])
 
 # ----- UI -----
@@ -60,41 +56,38 @@ if st.button("🔍 Analyze", type="primary"):
         st.warning("Please enter a longer review (at least 10 words).")
     else:
         with st.spinner("Analyzing sentiment and generating insight..."):
-            # 1. Sentiment analysis
+            # --- Sentiment analysis ---
             sentiment_result = sentiment_pipe(review)[0]
-            label = sentiment_result['label']  # POSITIVE / NEGATIVE
+            label = sentiment_result['label']          # POSITIVE or NEGATIVE
             confidence = sentiment_result['score']
             display_label = f"{label} 😊" if label == "POSITIVE" else f"{label} 😞"
 
-            # 2. Summarization
-            review_trim = review[:1024]  # BART max input
-            inputs = sum_tokenizer(
-                review_trim,
-                return_tensors="pt",
-                truncation=True,
-                max_length=1024,
-            )
-            summary_ids = sum_model.generate(
-                inputs.input_ids,
-                max_length=80,
-                min_length=20,
+            # --- Summarization ---
+            review_trim = review[:1024]   # BART max input (truncate if needed)
+            prompt = f"summarize: {review_trim}"
+
+            raw_output = summarizer(
+                prompt,
+                max_new_tokens=80,
+                min_new_tokens=20,
+                do_sample=False,
                 num_beams=6,
                 repetition_penalty=1.2,
-                length_penalty=1.0,
-                early_stopping=True,
                 no_repeat_ngram_size=3,
-            )
-            raw_summary = sum_tokenizer.decode(
-                summary_ids[0], skip_special_tokens=True
-            )
+                early_stopping=True,
+            )[0]['generated_text']
 
-            # Post-processing: ensure it ends with proper punctuation,
-            # then limit to the first two sentences
-            if raw_summary and raw_summary[-1] not in ('.', '!', '?'):
-                raw_summary += '.'
-            insight = get_first_two_sentences(raw_summary)
+            # Clean possible repetition of the prompt
+            if raw_output.startswith(prompt):
+                raw_output = raw_output[len(prompt):].strip()
 
-        # ----- Display results -----
+            # Ensure it ends with a proper punctuation
+            if raw_output and raw_output[-1] not in ('.', '!', '?'):
+                raw_output += '.'
+
+            insight = first_two_sentences(raw_output)
+
+        # --- Display results ---
         col1, col2 = st.columns(2)
         with col1:
             st.subheader("Sentiment")
