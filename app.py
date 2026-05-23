@@ -9,7 +9,7 @@ st.markdown("Enter a movie review below to analyze its sentiment and get a one-s
 # Pipeline 1: Your fine-tuned sentiment model (trusted source: Stanford IMDb + your fine-tuning)
 @st.cache_resource
 def load_sentiment_pipeline():
-    return pipeline("text-classification", model="你的用户名/imdb-distilbert")
+    return pipeline("text-classification", model="Aku0423/imdb-distilbert")
 
 # Pipeline 2: Facebook BART summarizer (trusted source: Meta AI)
 @st.cache_resource
