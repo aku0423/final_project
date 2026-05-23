@@ -1,12 +1,5 @@
 import streamlit as st
 from transformers import pipeline, AutoTokenizer, AutoModelForSeq2SeqLM
-import nltk
-
-# Download NLTK sentence tokenizer (only needed once, cached after first run)
-@st.cache_resource
-def download_nltk_punkt():
-    nltk.download('punkt_tab', quiet=True)
-    return True
 
 # ----- Load models (cached) -----
 @st.cache_resource
@@ -28,12 +21,30 @@ def load_summarizer_model():
     model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
     return tokenizer, model
 
-# Initialize
-download_nltk_punkt()
+# Initialize pipelines
 sentiment_pipe = load_sentiment_pipeline()
 sum_tokenizer, sum_model = load_summarizer_model()
 
-# ----- Streamlit UI -----
+# ----- Simple sentence tokenizer (no nltk needed) -----
+def get_first_two_sentences(text):
+    """Return the first two sentences of a text, splitting on '.', '!' or '?'."""
+    # Split on sentence-ending punctuation and keep the delimiter
+    sentences = []
+    current = ""
+    for char in text:
+        current += char
+        if char in ('.', '!', '?'):
+            stripped = current.strip()
+            if stripped:
+                sentences.append(stripped)
+            current = ""
+    # Add any remaining text as a sentence if there's no ending punctuation
+    if current.strip():
+        sentences.append(current.strip())
+    # Return first two sentences (joined)
+    return ' '.join(sentences[:2])
+
+# ----- UI -----
 st.set_page_config(page_title="Movie Review Analyzer", page_icon="🎬")
 st.title("🎬 Movie Review Sentiment & Insight")
 st.markdown("Enter a movie review below to analyze its sentiment and get a **concise insight** (1–2 sentences).")
@@ -49,14 +60,14 @@ if st.button("🔍 Analyze", type="primary"):
         st.warning("Please enter a longer review (at least 10 words).")
     else:
         with st.spinner("Analyzing sentiment and generating insight..."):
-            # 1. Sentiment analysis (on full text)
+            # 1. Sentiment analysis
             sentiment_result = sentiment_pipe(review)[0]
             label = sentiment_result['label']  # POSITIVE / NEGATIVE
             confidence = sentiment_result['score']
             display_label = f"{label} 😊" if label == "POSITIVE" else f"{label} 😞"
 
-            # 2. Summarization (truncate to avoid memory issues)
-            review_trim = review[:1024]
+            # 2. Summarization
+            review_trim = review[:1024]  # BART max input
             inputs = sum_tokenizer(
                 review_trim,
                 return_tensors="pt",
@@ -77,12 +88,11 @@ if st.button("🔍 Analyze", type="primary"):
                 summary_ids[0], skip_special_tokens=True
             )
 
-            # Post-process: ensure complete sentence, limit to 2 sentences
-            if raw_summary and not raw_summary.endswith('.'):
+            # Post-processing: ensure it ends with proper punctuation,
+            # then limit to the first two sentences
+            if raw_summary and raw_summary[-1] not in ('.', '!', '?'):
                 raw_summary += '.'
-            sentences = nltk.sent_tokenize(raw_summary)
-            if len(sentences) > 2:
-                raw_summary = ' '.join(sentences[:2])
+            insight = get_first_two_sentences(raw_summary)
 
         # ----- Display results -----
         col1, col2 = st.columns(2)
@@ -91,7 +101,7 @@ if st.button("🔍 Analyze", type="primary"):
             st.metric(label=display_label, value=f"{confidence:.2%}")
         with col2:
             st.subheader("Key Insight")
-            st.write(raw_summary)
+            st.write(insight)
 
         st.divider()
         st.caption(
