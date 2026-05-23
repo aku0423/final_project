@@ -57,3 +57,15 @@ if st.button("🔍 Analyze", type="primary"):
         
         st.divider()
         st.caption("Powered by your fine-tuned DistilBERT (trained on Stanford IMDb) and Facebook BART.")
+
+
+test_texts = [
+    "This movie is absolutely fantastic, I loved it!",
+    "Terrible waste of time, worst film ever.",
+    "It was okay, not great but not bad.",
+    "I want my money back, horrible acting.",
+    "Brilliant masterpiece, highly recommended."
+]
+for text in test_texts:
+    out = sentiment_pipe(text)[0]
+    print(f"{out['label']}: {out['score']:.4f} -> {text}")
