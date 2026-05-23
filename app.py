@@ -27,6 +27,7 @@ if st.button("🔍 Analyze", type="primary"):
     else:
         with st.spinner("Analyzing sentiment and generating summary..."):
             sentiment = sentiment_pipe(review)[0]
+            st.write("DEBUG — raw output:", sentiment) 
             label = "POSITIVE 😊" if sentiment['label'] == 'POSITIVE' else "NEGATIVE 😞"
             confidence = sentiment['score']
     
